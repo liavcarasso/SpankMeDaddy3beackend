@@ -44,7 +44,7 @@ class PlayerScore(BaseModel):
 
 @app.post("/reset_leaderboard")
 def reset_leaderboard(api_key: str = Header(None)):
-    # Check if the API key is provided and correct
+    print("Received API key:", api_key)
     if api_key != RESET_API_KEY:
         raise HTTPException(status_code=401, detail="Not authorized to reset leaderboard")
     
