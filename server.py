@@ -2,6 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
+import sqlite3
+
 app = FastAPI()
 
 
@@ -14,40 +16,52 @@ app.add_middleware(
 )
 
 # Load leaderboard from file
-try:
-    with open("leaderboard.json", "r") as file:
-        leaderboard = json.load(file)
-except:
-    leaderboard = []
+def get_db_connection():
+    conn = sqlite3.connect("leaderboard.db")  # Path to the SQLite database
+    conn.row_factory = sqlite3.Row  # Allows access to columns by name
+    return conn
 
+# Create leaderboard table if it doesn't exist
+def create_table():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS leaderboard (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        score INTEGER NOT NULL)''')
+    conn.commit()
+    conn.close()
+
+create_table()
 
 class PlayerScore(BaseModel):
     name: str
     score: int
 
 
-@app.get("/leaderboard")
-def get_leaderboard():
-    return sorted(leaderboard, key=lambda x: x["score"], reverse=True)[:10]
-
-
 @app.post("/submit_score")
 def submit_score(player: PlayerScore):
-    global leaderboard
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    # Check if player exists
-    for entry in leaderboard:
-        if entry["name"] == player.name:
-            entry["score"] = max(entry["score"], player.score)
-            break
-    else:
-        leaderboard.append({"name": player.name, "score": player.score})
-
-    # Sort and keep only top 10
-    leaderboard = sorted(leaderboard, key=lambda x: x["score"], reverse=True)[:10]
-
-    # Save leaderboard
-    with open("leaderboard.json", "w") as file:
-        json.dump(leaderboard, file)
-
+    # Insert or update the player's score (if they already exist in the leaderboard)
+    cursor.execute('''
+        INSERT OR REPLACE INTO leaderboard (name, score)
+        VALUES (?, COALESCE((SELECT score FROM leaderboard WHERE name = ?), 0) + ?)
+    ''', (player.name, player.name, player.score))
+    conn.commit()
+    conn.close()
     return {"message": "Score submitted!"}
+
+@app.get("/leaderboard")
+def get_leaderboard():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Fetch the top 10 scores
+    cursor.execute('''SELECT name, score FROM leaderboard ORDER BY score DESC LIMIT 10''')
+    leaderboard = cursor.fetchall()
+    conn.close()
+
+    # Convert the results to a list of dictionaries
+    return [{"name": row["name"], "score": row["score"]} for row in leaderboard]
