@@ -44,11 +44,24 @@ def submit_score(player: PlayerScore):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Insert or update the player's score (if they already exist in the leaderboard)
-    cursor.execute('''
-        INSERT OR REPLACE INTO leaderboard (name, score)
-        VALUES (?, COALESCE((SELECT score FROM leaderboard WHERE name = ?), 0) + ?)
-    ''', (player.name, player.name, player.score))
+    # Check if the player already exists in the leaderboard
+    cursor.execute("SELECT * FROM leaderboard WHERE name = ?", (player.name,))
+    existing_player = cursor.fetchone()
+
+    if existing_player:
+        # If the player exists, update their score
+        cursor.execute('''
+            UPDATE leaderboard
+            SET score = ?
+            WHERE name = ?
+        ''', (max(existing_player["score"], player.score), player.name))
+    else:
+        # If the player doesn't exist, insert them as a new entry
+        cursor.execute('''
+            INSERT INTO leaderboard (name, score)
+            VALUES (?, ?)
+        ''', (player.name, player.score))
+
     conn.commit()
     conn.close()
     return {"message": "Score submitted!"}
