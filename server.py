@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,6 +7,9 @@ import sqlite3
 
 app = FastAPI()
 
+RESET_API_KEY = os.getenv("RESET_API_KEY")
+if RESET_API_KEY is None:
+    raise Exception("RESET_API_KEY is not set in the environment.")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +41,20 @@ create_table()
 class PlayerScore(BaseModel):
     name: str
     score: int
+
+@app.post("/reset_leaderboard")
+def reset_leaderboard(api_key: str = Header(None)):
+    # Check if the API key is provided and correct
+    if api_key != RESET_API_KEY:
+        raise HTTPException(status_code=401, detail="Not authorized to reset leaderboard")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM leaderboard")
+    conn.commit()
+    conn.close()
+
+    return {"message": "Leaderboard has been reset!"}
 
 
 @app.post("/submit_score")
