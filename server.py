@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 app = FastAPI()
 
