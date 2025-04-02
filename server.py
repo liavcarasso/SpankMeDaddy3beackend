@@ -43,18 +43,17 @@ class PlayerScore(BaseModel):
     score: int
 
 @app.post("/reset_leaderboard")
-def reset_leaderboard(api_key: str = Header(None)):
-    print("Received API key:", api_key)
-    if api_key != RESET_API_KEY:
+def reset_leaderboard(x_api_key: str = Header(None)):
+    print("Received API key:", x_api_key)  # Debug output
+    if x_api_key != RESET_API_KEY:
         raise HTTPException(status_code=401, detail="Not authorized to reset leaderboard")
-        print("The right key:", RESET_API_KEY)
     
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM leaderboard")
     conn.commit()
     conn.close()
-
+    
     return {"message": "Leaderboard has been reset!"}
 
 
