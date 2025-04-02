@@ -21,19 +21,27 @@ app.add_middleware(
 
 # Load leaderboard from file
 def get_db_connection():
-    conn = sqlite3.connect("leaderboard.db")  # Path to the SQLite database
-    conn.row_factory = sqlite3.Row  # Allows access to columns by name
+    # Get your database URL from an environment variable
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    if DATABASE_URL is None:
+        raise Exception("DATABASE_URL is not set in the environment.")
+    
+    # Connect to PostgreSQL
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     return conn
 
-# Create leaderboard table if it doesn't exist
 def create_table():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS leaderboard (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT NOT NULL,
-                        score INTEGER NOT NULL)''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS leaderboard (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            score INTEGER NOT NULL
+        )
+    ''')
     conn.commit()
+    cursor.close()
     conn.close()
 
 create_table()
@@ -42,45 +50,24 @@ class PlayerScore(BaseModel):
     name: str
     score: int
 
-@app.post("/reset_leaderboard")
-def reset_leaderboard(x_api_key: str = Header(None)):
-    print("Received API key:", x_api_key)  # Debug output
-    if x_api_key != RESET_API_KEY:
-        raise HTTPException(status_code=401, detail="Not authorized to reset leaderboard")
-    
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM leaderboard")
-    conn.commit()
-    conn.close()
-    
-    return {"message": "Leaderboard has been reset!"}
-
-
 @app.post("/submit_score")
 def submit_score(player: PlayerScore):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Check if the player already exists in the leaderboard
-    cursor.execute("SELECT * FROM leaderboard WHERE name = ?", (player.name,))
+    # Check if the player already exists
+    cursor.execute("SELECT * FROM leaderboard WHERE name = %s", (player.name,))
     existing_player = cursor.fetchone()
 
     if existing_player:
-        # If the player exists, update their score
-        cursor.execute('''
-            UPDATE leaderboard
-            SET score = ?
-            WHERE name = ?
-        ''', (max(existing_player["score"], player.score), player.name))
+        # Update only if new score is higher
+        new_score = max(existing_player["score"], player.score)
+        cursor.execute("UPDATE leaderboard SET score = %s WHERE name = %s", (new_score, player.name))
     else:
-        # If the player doesn't exist, insert them as a new entry
-        cursor.execute('''
-            INSERT INTO leaderboard (name, score)
-            VALUES (?, ?)
-        ''', (player.name, player.score))
+        cursor.execute("INSERT INTO leaderboard (name, score) VALUES (%s, %s)", (player.name, player.score))
 
     conn.commit()
+    cursor.close()
     conn.close()
     return {"message": "Score submitted!"}
 
@@ -88,11 +75,21 @@ def submit_score(player: PlayerScore):
 def get_leaderboard():
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Fetch the top 10 scores
-    cursor.execute('''SELECT name, score FROM leaderboard ORDER BY score DESC LIMIT 10''')
+    cursor.execute("SELECT name, score FROM leaderboard ORDER BY score DESC LIMIT 10")
     leaderboard = cursor.fetchall()
+    cursor.close()
     conn.close()
+    return leaderboard
 
-    # Convert the results to a list of dictionaries
-    return [{"name": row["name"], "score": row["score"]} for row in leaderboard]
+@app.post("/reset_leaderboard")
+def reset_leaderboard(x_api_key: str = Header(None)):
+    if x_api_key != RESET_API_KEY:
+        raise HTTPException(status_code=401, detail="Not authorized to reset leaderboard")
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM leaderboard")
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"message": "Leaderboard has been reset!"}
