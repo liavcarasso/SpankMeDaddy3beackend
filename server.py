@@ -93,3 +93,46 @@ def reset_leaderboard(x_api_key: str = Header(None)):
     cursor.close()
     conn.close()
     return {"message": "Leaderboard has been reset!"}
+    
+@app.post("/add_friend")
+def add_friend(data: dict):
+    player = data["player_name"]
+    friend = data["friend_name"]
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Check if friend exists
+    cursor.execute("SELECT * FROM leaderboard WHERE name = %s", (friend,))
+    if not cursor.fetchone():
+        conn.close()
+        return {"message": "That player doesn't exist!"}
+
+    # Check if already friends
+    cursor.execute("SELECT * FROM friends WHERE player_name = %s AND friend_name = %s", (player, friend))
+    if cursor.fetchone():
+        conn.close()
+        return {"message": "Already friends!"}
+
+    # Add friendship
+    cursor.execute("INSERT INTO friends (player_name, friend_name) VALUES (%s, %s)", (player, friend))
+    conn.commit()
+    conn.close()
+    return {"message": f"{friend} has been added as a friend!"}
+
+@app.get("/friends/{player_name}")
+def get_friends(player_name: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT leaderboard.name, leaderboard.score
+        FROM friends
+        JOIN leaderboard ON friends.friend_name = leaderboard.name
+        WHERE friends.player_name = %s
+    """, (player_name,))
+    
+    friends = cursor.fetchall()
+    conn.close()
+    return friends
+
