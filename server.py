@@ -35,6 +35,8 @@ def get_db_connection():
 def create_table():
     conn = get_db_connection()
     cursor = conn.cursor()
+
+    # Create leaderboard table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS leaderboard (
             id SERIAL PRIMARY KEY,
@@ -42,6 +44,17 @@ def create_table():
             score INTEGER NOT NULL
         )
     ''')
+
+    # Create friends table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS friends (
+            id SERIAL PRIMARY KEY,
+            player_name TEXT NOT NULL,
+            friend_name TEXT NOT NULL,
+            UNIQUE(player_name, friend_name)
+        )
+    ''')
+
     conn.commit()
     cursor.close()
     conn.close()
