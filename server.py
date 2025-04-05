@@ -61,6 +61,22 @@ def create_table():
 
 create_table()
 
+def create_friend_requests_table():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS friend_requests (
+            id SERIAL PRIMARY KEY,
+            sender_name TEXT NOT NULL,
+            receiver_name TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+create_friend_requests_table()
+
 class PlayerScore(BaseModel):
     name: str
     score: int
