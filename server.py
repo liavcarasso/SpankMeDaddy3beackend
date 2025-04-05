@@ -165,3 +165,13 @@ def get_friends(player_name: str):
     conn.close()
     return friends
 
+@app.get("/get_friend_requests")
+def get_friend_requests(username: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT sender FROM friend_requests WHERE receiver = %s", (username,))
+    requests = [row[0] for row in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+    return requests
+
