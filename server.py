@@ -143,11 +143,17 @@ def add_friend(data: dict):
         conn.close()
         return {"message": "Already friends!"}
 
-    # Add friendship
-    cursor.execute("INSERT INTO friends (player_name, friend_name) VALUES (%s, %s)", (player, friend))
+    # Check if friend request already sent
+    cursor.execute("SELECT * FROM friend_requests WHERE sender_name = %s AND receiver_name = %s", (player, friend))
+    if cursor.fetchone():
+        conn.close()
+        return {"message": "Friend request already sent!"}
+
+    # Create friend request
+    cursor.execute("INSERT INTO friend_requests (sender_name, receiver_name) VALUES (%s, %s)", (player, friend))
     conn.commit()
     conn.close()
-    return {"message": f"{friend} has been added as a friend!"}
+    return {"message": f"Friend request sent to {friend}!"}
 
 @app.get("/friends/{player_name}")
 def get_friends(player_name: str):
