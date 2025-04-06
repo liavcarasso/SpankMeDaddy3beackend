@@ -181,4 +181,26 @@ def get_friend_requests(username: str):
     conn.close()
     return requests
 
+@app.post("/respond_friend_request")
+def respond_friend_request(data: dict):
+    sender = data["sender"]
+    receiver = data["receiver"]
+    accept = data["accept"]
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Delete request regardless
+    cursor.execute("DELETE FROM friend_requests WHERE sender_name = %s AND receiver_name = %s", (sender, receiver))
+
+    if accept:
+        # Add both sides as friends
+        cursor.execute("INSERT INTO friends (player_name, friend_name) VALUES (%s, %s)", (receiver, sender))
+        cursor.execute("INSERT INTO friends (player_name, friend_name) VALUES (%s, %s)", (sender, receiver))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return {"message": "Friend request responded to!"}
 
