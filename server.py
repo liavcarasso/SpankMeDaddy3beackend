@@ -106,6 +106,21 @@ def receive_actions(payload: PlayerActions):
     conn.close()
     return {"message": "Actions processed"}
 
+@app.get("/player_score/{player_name}")
+def get_player_score(player_name: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT score FROM leaderboard WHERE name = %s", (player_name,))
+    row = cursor.fetchone()
+
+    cursor.close()
+    conn.close()
+
+    if row:
+        return {"score": row["score"]}
+    else:
+        return {"score": 0}
 
 @app.get("/leaderboard")
 def get_leaderboard():
