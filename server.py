@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import List, Dict
+from datetime import datetime, timezone
 
 app = FastAPI()
 
@@ -82,9 +83,19 @@ class PlayerActions(BaseModel):
 def receive_actions(payload: PlayerActions):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT score FROM leaderboard WHERE name = %s", (payload.name,))
+
+    cursor.execute("SELECT score, sps, last_updated FROM leaderboard WHERE name = %s", (payload.name,))
     row = cursor.fetchone()
+
     score = row["score"] if row else 0
+    sps = row["sps"] if row else 0
+    last_updated = row["last_updated"] if row else datetime.now(timezone.utc)
+
+
+    now = datetime.now(timezone.utc)
+    seconds_passed = (now - last_updated).total_seconds()
+    passive_earned = int(sps * seconds_passed)
+    score += passive_earned
 
     for action in payload.actions:
         action_type = action["type"]
@@ -93,34 +104,39 @@ def receive_actions(payload: PlayerActions):
         elif action_type == "buy_upgrade":
             upgrade = action["data"].get("upgrade")
             if upgrade == "auto_spank":
-                # placeholder for future sps/logic
-                pass
+                sps += 1
 
     if row:
-        cursor.execute("UPDATE leaderboard SET score = %s WHERE name = %s", (score, payload.name))
+        cursor.execute(
+            "UPDATE leaderboard SET score = %s, sps = %s, last_updated = %s WHERE name = %s",
+            (score, sps, now, payload.name)
+        )
     else:
-        cursor.execute("INSERT INTO leaderboard (name, score) VALUES (%s, %s)", (payload.name, score))
+        cursor.execute(
+            "INSERT INTO leaderboard (name, score, sps, last_updated) VALUES (%s, %s, %s, %s)",
+            (payload.name, score, sps, now)
+        )
 
     conn.commit()
     cursor.close()
     conn.close()
+
     return {"message": "Actions processed"}
 
-@app.get("/player_score/{player_name}")
-def get_player_score(player_name: str):
+@app.get("/player_data/{player_name}")
+def get_player_data(player_name: str):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT score FROM leaderboard WHERE name = %s", (player_name,))
+    cursor.execute("SELECT score, sps FROM leaderboard WHERE name = %s", (player_name,))
     row = cursor.fetchone()
-
     cursor.close()
     conn.close()
 
     if row:
-        return {"score": row["score"]}
+        return {"score": row["score"], "sps": row["sps"]}
     else:
-        return {"score": 0}
+        return {"score": 0, "sps": 0}
 
 @app.get("/leaderboard")
 def get_leaderboard():
