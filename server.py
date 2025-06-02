@@ -74,6 +74,32 @@ def create_friend_requests_table():
 create_friend_requests_table()
 
 
+def update_leaderboard_schema():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='leaderboard' AND column_name='sps';
+    """)
+    if cursor.fetchone() is None:
+        cursor.execute("ALTER TABLE leaderboard ADD COLUMN sps INTEGER DEFAULT 0;")
+
+    cursor.execute("""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='leaderboard' AND column_name='last_updated';
+    """)
+    if cursor.fetchone() is None:
+        cursor.execute("ALTER TABLE leaderboard ADD COLUMN last_updated TIMESTAMP DEFAULT NOW();")
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+update_leaderboard_schema()
+
 class PlayerActions(BaseModel):
     name: str
     actions: List[Dict]  # Each action: {type, data, timestamp}
