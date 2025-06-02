@@ -117,7 +117,9 @@ def receive_actions(payload: PlayerActions):
     sps = row["sps"] if row else 0
     last_updated = row["last_updated"] if row else datetime.now(timezone.utc)
 
-
+    if last_updated.tzinfo is None:
+        last_updated = last_updated.replace(tzinfo=timezone.utc)
+        
     now = datetime.now(timezone.utc)
     seconds_passed = (now - last_updated).total_seconds()
     passive_earned = int(sps * seconds_passed)
