@@ -2,10 +2,9 @@ import os
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import json
-import sqlite3
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from typing import List, Dict
 
 app = FastAPI()
 
@@ -15,28 +14,24 @@ if RESET_API_KEY is None:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change this to your frontend URL when deploying
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST"],  # Allow both GET and POST requests
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# Load leaderboard from file
+
 def get_db_connection():
-    # Get your database URL from an environment variable
     DATABASE_URL = os.getenv("DATABASE_URL")
     if DATABASE_URL is None:
         raise Exception("DATABASE_URL is not set in the environment.")
-    
-    # Connect to PostgreSQL
     conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     return conn
+
 
 def create_table():
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Create leaderboard table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS leaderboard (
             id SERIAL PRIMARY KEY,
@@ -44,8 +39,6 @@ def create_table():
             score INTEGER NOT NULL
         )
     ''')
-
-    # Create friends table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS friends (
             id SERIAL PRIMARY KEY,
@@ -54,12 +47,13 @@ def create_table():
             UNIQUE(player_name, friend_name)
         )
     ''')
-
     conn.commit()
     cursor.close()
     conn.close()
 
+
 create_table()
+
 
 def create_friend_requests_table():
     conn = get_db_connection()
@@ -75,32 +69,43 @@ def create_friend_requests_table():
     cursor.close()
     conn.close()
 
+
 create_friend_requests_table()
 
-class PlayerScore(BaseModel):
-    name: str
-    score: int
 
-@app.post("/submit_score")
-def submit_score(player: PlayerScore):
+class PlayerActions(BaseModel):
+    name: str
+    actions: List[Dict]  # Each action: {type, data, timestamp}
+
+
+@app.post("/game/actions")
+def receive_actions(payload: PlayerActions):
     conn = get_db_connection()
     cursor = conn.cursor()
+    cursor.execute("SELECT score FROM leaderboard WHERE name = %s", (payload.name,))
+    row = cursor.fetchone()
+    score = row["score"] if row else 0
 
-    # Check if the player already exists
-    cursor.execute("SELECT * FROM leaderboard WHERE name = %s", (player.name,))
-    existing_player = cursor.fetchone()
+    for action in payload.actions:
+        action_type = action["type"]
+        if action_type == "click":
+            score += 1
+        elif action_type == "buy_upgrade":
+            upgrade = action["data"].get("upgrade")
+            if upgrade == "auto_spank":
+                # placeholder for future sps/logic
+                pass
 
-    if existing_player:
-        # Update only if new score is higher
-        new_score = max(existing_player["score"], player.score)
-        cursor.execute("UPDATE leaderboard SET score = %s WHERE name = %s", (new_score, player.name))
+    if row:
+        cursor.execute("UPDATE leaderboard SET score = %s WHERE name = %s", (score, payload.name))
     else:
-        cursor.execute("INSERT INTO leaderboard (name, score) VALUES (%s, %s)", (player.name, player.score))
+        cursor.execute("INSERT INTO leaderboard (name, score) VALUES (%s, %s)", (payload.name, score))
 
     conn.commit()
     cursor.close()
     conn.close()
-    return {"message": "Score submitted!"}
+    return {"message": "Actions processed"}
+
 
 @app.get("/leaderboard")
 def get_leaderboard():
@@ -112,9 +117,9 @@ def get_leaderboard():
     conn.close()
     return leaderboard
 
+
 @app.post("/reset_leaderboard")
 def reset_leaderboard(x_api_key: str = Header(None)):
-
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM leaderboard")
@@ -122,7 +127,8 @@ def reset_leaderboard(x_api_key: str = Header(None)):
     cursor.close()
     conn.close()
     return {"message": "Leaderboard has been reset!"}
-    
+
+
 @app.post("/add_friend")
 def add_friend(data: dict):
     player = data["player_name"]
@@ -130,46 +136,41 @@ def add_friend(data: dict):
 
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Check if friend exists
     cursor.execute("SELECT * FROM leaderboard WHERE name = %s", (friend,))
     if not cursor.fetchone():
         conn.close()
         return {"message": "That player doesn't exist!"}
 
-    # Check if already friends
     cursor.execute("SELECT * FROM friends WHERE player_name = %s AND friend_name = %s", (player, friend))
     if cursor.fetchone():
         conn.close()
         return {"message": "Already friends!"}
 
-    # Check if friend request already sent
     cursor.execute("SELECT * FROM friend_requests WHERE sender_name = %s AND receiver_name = %s", (player, friend))
     if cursor.fetchone():
         conn.close()
         return {"message": "Friend request already sent!"}
 
-    # Create friend request
     cursor.execute("INSERT INTO friend_requests (sender_name, receiver_name) VALUES (%s, %s)", (player, friend))
     conn.commit()
     conn.close()
     return {"message": f"Friend request sent to {friend}!"}
 
+
 @app.get("/friends/{player_name}")
 def get_friends(player_name: str):
     conn = get_db_connection()
     cursor = conn.cursor()
-
     cursor.execute("""
         SELECT leaderboard.name, leaderboard.score
         FROM friends
         JOIN leaderboard ON friends.friend_name = leaderboard.name
         WHERE friends.player_name = %s
     """, (player_name,))
-    
     friends = cursor.fetchall()
     conn.close()
     return friends
+
 
 @app.get("/get_friend_requests")
 def get_friend_requests(username: str):
@@ -181,6 +182,7 @@ def get_friend_requests(username: str):
     conn.close()
     return requests
 
+
 @app.post("/respond_friend_request")
 def respond_friend_request(data: dict):
     sender = data["sender"]
@@ -189,18 +191,13 @@ def respond_friend_request(data: dict):
 
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    # Delete request regardless
     cursor.execute("DELETE FROM friend_requests WHERE sender_name = %s AND receiver_name = %s", (sender, receiver))
 
     if accept:
-        # Add both sides as friends
         cursor.execute("INSERT INTO friends (player_name, friend_name) VALUES (%s, %s)", (receiver, sender))
         cursor.execute("INSERT INTO friends (player_name, friend_name) VALUES (%s, %s)", (sender, receiver))
 
     conn.commit()
     cursor.close()
     conn.close()
-
     return {"message": "Friend request responded to!"}
-
