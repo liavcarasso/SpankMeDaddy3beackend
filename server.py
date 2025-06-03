@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import List, Dict
 from datetime import datetime, timezone
+import uuid
 
 app = FastAPI()
 
@@ -53,9 +54,6 @@ def create_table():
     conn.close()
 
 
-create_table()
-
-
 def create_friend_requests_table():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -71,8 +69,27 @@ def create_friend_requests_table():
     conn.close()
 
 
-create_friend_requests_table()
+def create_players_table():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS players (
+            id UUID PRIMARY KEY,
+            name TEXT,
+            token TEXT UNIQUE NOT NULL,
+            score INTEGER DEFAULT 0,
+            sps INTEGER DEFAULT 0,
+            last_updated TIMESTAMP DEFAULT NOW()
+        )
+    ''')
+    conn.commit()
+    cursor.close()
+    conn.close()
 
+
+create_table()
+create_friend_requests_table()
+create_players_table()
 
 def update_leaderboard_schema():
     conn = get_db_connection()
@@ -100,26 +117,52 @@ def update_leaderboard_schema():
 
 update_leaderboard_schema()
 
-class PlayerActions(BaseModel):
+
+class RegisterRequest(BaseModel):
     name: str
-    actions: List[Dict]  # Each action: {type, data, timestamp}
 
+class RegisterResponse(BaseModel):
+    player_id: str
+    token: str
 
-@app.post("/game/actions")
-def receive_actions(payload: PlayerActions):
+class PlayerActionsSecure(BaseModel):
+    token: str
+    actions: List[Dict]
+
+@app.post("/register", response_model=RegisterResponse)
+def register_player(payload: RegisterRequest):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT score, sps, last_updated FROM leaderboard WHERE name = %s", (payload.name,))
-    row = cursor.fetchone()
+    player_id = str(uuid.uuid4())
+    token = str(uuid.uuid4())
 
-    score = row["score"] if row else 0
-    sps = row["sps"] if row else 0
-    last_updated = row["last_updated"] if row else datetime.now(timezone.utc)
+    cursor.execute("INSERT INTO players (id, name, token) VALUES (%s, %s, %s)",
+                   (player_id, payload.name, token))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return RegisterResponse(player_id=player_id, token=token)
+
+@app.post("/game/actions")
+def receive_actions(payload: PlayerActionsSecure):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM players WHERE token = %s", (payload.token,))
+    player = cursor.fetchone()
+
+    if not player:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    score = player["score"]
+    sps = player["sps"]
+    last_updated = player["last_updated"]
 
     if last_updated.tzinfo is None:
         last_updated = last_updated.replace(tzinfo=timezone.utc)
-        
+
     now = datetime.now(timezone.utc)
     seconds_passed = (now - last_updated).total_seconds()
     passive_earned = int(sps * seconds_passed)
@@ -134,16 +177,10 @@ def receive_actions(payload: PlayerActions):
             if upgrade == "auto_spank":
                 sps += 1
 
-    if row:
-        cursor.execute(
-            "UPDATE leaderboard SET score = %s, sps = %s, last_updated = %s WHERE name = %s",
-            (score, sps, now, payload.name)
-        )
-    else:
-        cursor.execute(
-            "INSERT INTO leaderboard (name, score, sps, last_updated) VALUES (%s, %s, %s, %s)",
-            (payload.name, score, sps, now)
-        )
+    cursor.execute(
+        "UPDATE players SET score = %s, sps = %s, last_updated = %s WHERE id = %s",
+        (score, sps, now, player["id"])
+    )
 
     conn.commit()
     cursor.close()
