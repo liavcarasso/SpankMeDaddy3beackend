@@ -186,7 +186,7 @@ def receive_actions(payload: PlayerActionsSecure):
     cursor.close()
     conn.close()
 
-    return {"message": "Actions processed"}
+    return {"message": f"score:{score} ,Actions processed"}
 
 @app.get("/player_data/{player_name}")
 def get_player_data(player_name: str):
