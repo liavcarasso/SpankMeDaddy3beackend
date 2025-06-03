@@ -186,14 +186,14 @@ def receive_actions(payload: PlayerActionsSecure):
     cursor.close()
     conn.close()
 
-    return {"message": f"score:{score} ,Actions processed"}
+    return {"message": f"id:{payload.token} ,Actions processed"}
 
-@app.get("/player_data/{player_name}")
-def get_player_data(player_name: str):
+@app.get("/player_data/{player_token}")
+def get_player_data(player_token: str):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT score, sps FROM leaderboard WHERE name = %s", (player_name,))
+    cursor.execute("SELECT score, sps FROM players WHERE id = %s", (player_token,))
     row = cursor.fetchone()
     cursor.close()
     conn.close()
