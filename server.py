@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import psycopg2
@@ -91,32 +91,6 @@ create_table()
 create_friend_requests_table()
 create_players_table()
 
-def update_leaderboard_schema():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name='leaderboard' AND column_name='sps';
-    """)
-    if cursor.fetchone() is None:
-        cursor.execute("ALTER TABLE leaderboard ADD COLUMN sps INTEGER DEFAULT 0;")
-
-    cursor.execute("""
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name='leaderboard' AND column_name='last_updated';
-    """)
-    if cursor.fetchone() is None:
-        cursor.execute("ALTER TABLE leaderboard ADD COLUMN last_updated TIMESTAMP DEFAULT NOW();")
-
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-update_leaderboard_schema()
-
 
 class RegisterRequest(BaseModel):
     name: str
@@ -128,6 +102,9 @@ class RegisterResponse(BaseModel):
 class PlayerActionsSecure(BaseModel):
     token: str
     actions: List[Dict]
+
+class ClickPacket(BaseModel):
+    clicks: int
 
 @app.post("/register", response_model=RegisterResponse)
 def register_player(payload: RegisterRequest):
@@ -145,43 +122,64 @@ def register_player(payload: RegisterRequest):
 
     return RegisterResponse(player_id=player_id, token=token)
 
-@app.post("/game/actions")
-def receive_actions(payload: PlayerActionsSecure):
+def get_authenticated_player(request: Request):
+    token = request.headers.get("Authorization")
+    if not token or not token.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid token")
+
+    token = token.split(" ")[1]
     conn = get_db_connection()
     cursor = conn.cursor()
-
-    cursor.execute("SELECT * FROM players WHERE token = %s", (payload.token,))
+    cursor.execute("SELECT * FROM players WHERE token = %s", (token,))
     player = cursor.fetchone()
+    cursor.close()
+    conn.close()
 
     if not player:
         raise HTTPException(status_code=401, detail="Invalid token")
+    return player
 
-    score = player["score"]
-    sps = player["sps"]
+@app.post("/game/actions")
+def receive_actions(payload: PlayerActionsSecure, player=Depends(get_authenticated_player)):
+    now = datetime.now(timezone.utc)
     last_updated = player["last_updated"]
-
     if last_updated.tzinfo is None:
         last_updated = last_updated.replace(tzinfo=timezone.utc)
 
-    now = datetime.now(timezone.utc)
+    sps = player["sps"]
+
     seconds_passed = (now - last_updated).total_seconds()
     passive_earned = int(sps * seconds_passed)
-    score += passive_earned
 
+    click_count = sum(1 for a in payload.actions if a.get("type") == "click")
+
+    max_clicks = int(seconds_passed * 15)
+    if max_clicks < 1:
+        max_clicks = 1
+
+    if click_count > max_clicks:
+        raise HTTPException(status_code=400, detail="Too many clicks in short time")
+
+    score = player["score"] + passive_earned + click_count
     for action in payload.actions:
-        action_type = action["type"]
-        if action_type == "click":
-            score += 1
-        elif action_type == "buy_upgrade":
+        if action["type"] == "buy_upgrade":
             upgrade = action["data"].get("upgrade")
             if upgrade == "auto_spank":
-                sps += 1
+                price = (10 * 5.5) ** (sps + 1)
+                if sps != 0:
+                    price = price / (10 * sps)
+                if score >= price:
+                    score -= price
+                    sps += 1
+                else:
+                    raise HTTPException(status_code=400, detail="Not enough spanks")
 
+    conn = get_db_connection()
+    cursor = conn.cursor()
     cursor.execute(
         "UPDATE players SET score = %s, sps = %s, last_updated = %s WHERE id = %s",
         (score, sps, now, player["id"])
     )
-
     conn.commit()
     cursor.close()
     conn.close()
@@ -203,11 +201,22 @@ def get_player_data(player_token: str):
     else:
         return {"score": 0, "sps": 0}
 
+@app.post("/delete_player/{player_token}")
+def delete_player(player_token: str):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM players WHERE token = %s", (player_token,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"message": "player deleted"}
+
 @app.get("/leaderboard")
 def get_leaderboard():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT name, score FROM leaderboard ORDER BY score DESC LIMIT 10")
+    cursor.execute("SELECT name, score FROM players ORDER BY score DESC LIMIT 10")
     leaderboard = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -232,7 +241,7 @@ def add_friend(data: dict):
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM leaderboard WHERE name = %s", (friend,))
+    cursor.execute("SELECT * FROM players WHERE name = %s", (friend,))
     if not cursor.fetchone():
         conn.close()
         return {"message": "That player doesn't exist!"}
@@ -258,9 +267,9 @@ def get_friends(player_name: str):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT leaderboard.name, leaderboard.score
+        SELECT players.name, players.score
         FROM friends
-        JOIN leaderboard ON friends.friend_name = leaderboard.name
+        JOIN players ON friends.friend_name = players.name
         WHERE friends.player_name = %s
     """, (player_name,))
     friends = cursor.fetchall()
