@@ -100,7 +100,6 @@ class RegisterResponse(BaseModel):
     token: str
 
 class PlayerActionsSecure(BaseModel):
-    token: str
     actions: List[Dict]
 
 class ClickPacket(BaseModel):
