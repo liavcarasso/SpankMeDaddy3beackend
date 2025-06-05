@@ -251,6 +251,25 @@ def delete_player(player_token: str):
     conn.close()
     return {"message": "player deleted"}
 
+
+@app.get("/token_valid")
+def token_valid(request: Request):
+    token = request.headers.get("Authorization")
+    if not token or not token.startswith("Bearer "):
+        return "false"
+
+    token = token.split(" ")[1]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM players WHERE token = %s", (token,))
+    player = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not player:
+        return "false"
+    return "true"
+
 @app.get("/leaderboard")
 def get_leaderboard():
     conn = get_db_connection()
