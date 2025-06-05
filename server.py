@@ -95,17 +95,13 @@ create_players_table()
 class RegisterRequest(BaseModel):
     name: str
 
-class RegisterResponse(BaseModel):
-    player_id: str
-    token: str
-
 class PlayerActionsSecure(BaseModel):
     actions: List[Dict]
 
-class ClickPacket(BaseModel):
-    clicks: int
+class PlayerTokenSecure(BaseModel):
+    token: str
 
-@app.post("/register", response_model=RegisterResponse)
+@app.post("/register", response_model=PlayerTokenSecure)
 def register_player(payload: RegisterRequest):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -119,7 +115,7 @@ def register_player(payload: RegisterRequest):
     cursor.close()
     conn.close()
 
-    return RegisterResponse(player_id=player_id, token=token)
+    return PlayerTokenSecure(token=token)
 
 def get_authenticated_player(request: Request):
     token = request.headers.get("Authorization")
@@ -184,6 +180,50 @@ def receive_actions(payload: PlayerActionsSecure, player=Depends(get_authenticat
     conn.close()
 
     return {"message": f"Actions processed"}
+
+@app.post("/game/updatesps")
+def updatesps(payload: PlayerActionsSecure):
+    token = payload.token
+    if not token or not token.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid token")
+
+    token = token.split(" ")[1]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM players WHERE token = %s", (token,))
+    player = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not player:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+    now = datetime.now(timezone.utc)
+    last_updated = player["last_updated"]
+    if last_updated.tzinfo is None:
+        last_updated = last_updated.replace(tzinfo=timezone.utc)
+
+    sps = player["sps"]
+
+    seconds_passed = (now - last_updated).total_seconds()
+    passive_earned = int(sps * seconds_passed)
+
+    score = player["score"] + passive_earned
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE players SET score = %s, sps = %s, last_updated = %s WHERE id = %s",
+        (score, sps, now, player["id"])
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return {"message": f"Actions processed"}
+
+
 
 @app.get("/player_data/{player_token}")
 def get_player_data(player_token: str):
