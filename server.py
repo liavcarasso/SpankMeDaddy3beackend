@@ -228,13 +228,12 @@ def updatesps(payload: PlayerActionsSecure):
     return {"message": f"Actions processed"}
 
 
-
-@app.get("/player_data/{player_token}")
-def get_player_data(player_token: str):
+@app.get("/player_data")
+def get_player_data(player=Depends(get_authenticated_player)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT score, sps FROM players WHERE token = %s", (player_token,))
+    cursor.execute("SELECT score, sps FROM players WHERE token = %s", (player["token"]))
     row = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -245,15 +244,29 @@ def get_player_data(player_token: str):
         return {"score": 0, "sps": 0}
 
 @app.post("/delete_player/{player_token}")
-def delete_player(player_token: str):
-    conn = get_db_connection()
-    cursor = conn.cursor()
+def delete_player(player_token: str, x_api_key: str = Header(None)):
+    if x_api_key != RESET_API_KEY:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    cursor.execute("DELETE FROM players WHERE token = %s", (player_token,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return {"message": "player deleted"}
+        cursor.execute("DELETE FROM players WHERE token = %s", (player_token,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"message": "player deleted"}
+    return {"message": "key isn't valid!"}
+
+@app.post("/reset_all_players")
+def delete_player(x_api_key: str = Header(None)):
+    if x_api_key != RESET_API_KEY:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM players")
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"message": "players reset"}
+    return {"message": "key isn't valid!"}
 
 
 @app.get("/token_valid")
@@ -283,19 +296,6 @@ def get_leaderboard():
     cursor.close()
     conn.close()
     return leaderboard
-
-
-@app.post("/reset_leaderboard")
-def reset_leaderboard(x_api_key: str = Header(None)):
-    if x_api_key != RESET_API_KEY:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM leaderboard")
-        conn.commit()
-        cursor.close()
-        conn.close()
-        return {"message": "Leaderboard has been reset!"}
-    return {"message": "key isnt valid!"}
 
 
 @app.post("/add_friend")
