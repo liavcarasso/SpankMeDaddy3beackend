@@ -281,15 +281,17 @@ def get_leaderboard():
     return leaderboard
 
 
-# @app.post("/reset_leaderboard")
-# def reset_leaderboard(x_api_key: str = Header(None)):
-#     conn = get_db_connection()
-#     cursor = conn.cursor()
-#     cursor.execute("DELETE FROM leaderboard")
-#     conn.commit()
-#     cursor.close()
-#     conn.close()
-#     return {"message": "Leaderboard has been reset!"}
+@app.post("/reset_leaderboard")
+def reset_leaderboard(x_api_key: str = Header(None)):
+    if x_api_key:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM leaderboard")
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return {"message": "Leaderboard has been reset!"}
+    return {"message": "key isnt valid!"}
 
 
 @app.post("/add_friend")
