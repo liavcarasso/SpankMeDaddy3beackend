@@ -148,6 +148,10 @@ def receive_actions(payload: PlayerActionsSecure, player=Depends(get_authenticat
 
     click_count = sum(1 for a in payload.actions if a.get("type") == "click")
 
+    MAX_CLICKS_PER_PACK = 200
+    if click_count > MAX_CLICKS_PER_PACK:
+        raise HTTPException(status_code=400, detail="Too many clicks in short time")
+
     max_clicks = int(seconds_passed * 15)
     if max_clicks < 1:
         max_clicks = 1
