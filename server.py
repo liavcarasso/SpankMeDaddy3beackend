@@ -256,7 +256,7 @@ def delete_player(player_token: str):
 def token_valid(request: Request):
     token = request.headers.get("Authorization")
     if not token or not token.startswith("Bearer "):
-        return "false"
+        return False
 
     token = token.split(" ")[1]
     conn = get_db_connection()
@@ -267,8 +267,8 @@ def token_valid(request: Request):
     conn.close()
 
     if not player:
-        return "false"
-    return "true"
+        return False
+    return True
 
 @app.get("/leaderboard")
 def get_leaderboard():
@@ -281,15 +281,15 @@ def get_leaderboard():
     return leaderboard
 
 
-@app.post("/reset_leaderboard")
-def reset_leaderboard(x_api_key: str = Header(None)):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM leaderboard")
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return {"message": "Leaderboard has been reset!"}
+# @app.post("/reset_leaderboard")
+# def reset_leaderboard(x_api_key: str = Header(None)):
+#     conn = get_db_connection()
+#     cursor = conn.cursor()
+#     cursor.execute("DELETE FROM leaderboard")
+#     conn.commit()
+#     cursor.close()
+#     conn.close()
+#     return {"message": "Leaderboard has been reset!"}
 
 
 @app.post("/add_friend")
