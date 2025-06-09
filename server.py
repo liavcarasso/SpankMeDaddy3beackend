@@ -283,7 +283,7 @@ def get_leaderboard():
 
 @app.post("/reset_leaderboard")
 def reset_leaderboard(x_api_key: str = Header(None)):
-    if x_api_key:
+    if x_api_key != RESET_API_KEY:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("DELETE FROM leaderboard")
