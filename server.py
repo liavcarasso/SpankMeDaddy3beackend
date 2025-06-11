@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, HTTPException, Header, Request, Depends
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import psycopg2
@@ -233,7 +234,7 @@ def get_player_data(player=Depends(get_authenticated_player)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT score, sps FROM players WHERE token = %s", (player["token"],))
+    cursor.execute("SELECT score, sps FROM players WHERE token = %s", (player["token"]))
     row = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -273,7 +274,7 @@ def delete_player(x_api_key: str = Header(None)):
 def token_valid(request: Request):
     token = request.headers.get("Authorization")
     if not token or not token.startswith("Bearer "):
-        return False
+        return JSONResponse(content={"valid": False})
 
     token = token.split(" ")[1]
     conn = get_db_connection()
@@ -283,9 +284,7 @@ def token_valid(request: Request):
     cursor.close()
     conn.close()
 
-    if not player:
-        return False
-    return True
+    return JSONResponse(content={"valid": bool(player)})
 
 @app.get("/leaderboard")
 def get_leaderboard():
