@@ -234,7 +234,7 @@ def get_player_data(player=Depends(get_authenticated_player)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT score, sps FROM players WHERE token = %s", (player["token"]))
+    cursor.execute("SELECT score, sps FROM players WHERE token = %s", (player["token"],))
     row = cursor.fetchone()
     cursor.close()
     conn.close()
